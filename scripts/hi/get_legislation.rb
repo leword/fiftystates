@@ -11,28 +11,59 @@ module Hawaii
       @detail_url = detail_url
       @year = year
 			@chamber = chamber
-			@session = "#{@year} Session"
+			@session = session
     end
     
 		# Determine if bill is eligable for the year requested
 		def eligable?
-			@eligable ||= (not (detail_page.at('table/tr:nth(2)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/#{@year}/).nil?)
+		  puts "Determine Eligability"
+		  if @year.to_i == 2008
+			  @eligable ||= (not (detail_page.search('table')[1].at('tr:nth(1)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/#{@year}/).nil?)
+			elsif @year.to_i == 2007
+  			@eligable ||= (not (detail_page.at('table/tr:nth(2)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/#{@year}/).nil?)
+		  else
+		    @eligable ||= (not (detail_page.search('table')[1].at('tr:nth(2)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/#{@year}/).nil?)
+		  end
 		end
 		
 		def name
-			detail_page.at('div.clearrow:nth(1) > div.rightside').inner_text
+		  puts "Get name"
+		  if (@year.to_i >= 2007)
+  			detail_page.at('div.clearrow:nth(1) > div.rightside').inner_text
+		  else
+		    detail_page.at('table/tr/td:nth(1)').inner_text.strip
+	    end
 		end
-
+		
+		def session
+		  puts "Get session"
+      detail_page.at('h2/center').inner_text.gsub(/^[^<]+<BR>/, "")
+    rescue
+      "#{@year} Regular Session"
+    end
+    
     def bill_id
-      detail_page.at('h3/a').inner_text
+      puts "Get Bill ID"
+      if (@year.to_i >= 2007)
+        detail_page.at('h3/a').inner_text
+      else
+        detail_page.at('h3/center').inner_text
+      end
     end
     
     def primary_sponsor
-      detail_page.at('div.clearrow:nth(6) > div.rightside').inner_text
+      puts "Get Sponsor"
+      if (@year.to_i >= 2007)
+        detail_page.at('div.clearrow:nth(6) > div.rightside').inner_text
+      else
+        detail_page.at('table/tr:nth(5)/td:nth(1)').inner_text.strip
+      end
     end
 
 		def actions
-			detail_page.search('table/tr').collect do |row|
+		  puts "Get Actions"
+		  path = (@year.to_i >= 2007) ? 'table/tr' : 'table:nth(1)/tr'
+			detail_page.search(path).collect do |row|
 				if row.at('td').nil?
 					nil
 				else
@@ -127,8 +158,7 @@ module Hawaii
 			out = []
 			matched = @detail_url.match(/billtype=([^&]+)&billnumber=(.+)$/)
 			version_list = Hpricot(open("http://www.capitol.hawaii.gov/site1/docs/getstatus.asp?query=#{matched[1]}#{matched[2]}&showtext=on&currpage=1"))
-			version_list.search('div.monthwrapper').search('p').each do |version|
-				
+			version_list.search('div.monthwrapper').search('p').each do |version|				
 				out << {:version_name => version.at('a').inner_text.upcase.gsub(/_\.HTM/, ""), :version_url => version.at('a:nth(1)').attributes['href']}
       end
       out
@@ -157,23 +187,25 @@ module Hawaii
   
   def self.scrape_bills(chamber, year)
 		if (year.to_i < 2008)
+		  puts "Starting < 2008"
 			if chamber.nil?
-				chamber_ids = ["S", "H"] 
+				chamber_ids = {"S" => "upper", "H" => "lower"} 
 			else
-				chamber_ids = (chamber == "lower") ? ["S"] : ["H"]
+				chamber_ids = (chamber == "upper") ? {"S" => "upper"} : {"H" => "lower"} 
 			end
 			puts "Searching archives"
 			#search the archives
 			doc = Hpricot(open("http://www.capitol.hawaii.gov/session#{year}/status/"))
 			doc.search("a").each do |link|
-				chamber_ids.each do |id|
+				chamber_ids.each do |id, this_chamber|
 					if (link).inner_text =~ /^#{id}/
-						bill = LegacyBill.new("http://www.capitol.hawaii.gov/session#{year}/status/#{link.inner_text}", year, chamber)
+						bill = LegacyBill.new("http://www.capitol.hawaii.gov/session#{year}/status/#{link.inner_text}", year, this_chamber)
 						process_bill(bill)
 					end
 				end
 			end
-		elsif year.to_i == 2008
+		elsif (year.to_i == 2008)
+		  puts "Starting 2008"
 			if (chamber != "upper")	
 				doc = Hpricot(open("http://www.capitol.hawaii.gov/session2008/lists/intro_listHB_pf_all.htm"))
 				doc.search('table/tr').each do |row|
@@ -244,7 +276,7 @@ module Hawaii
 	    	add_bill_version(common_hash.merge(version))
 	    end
 		else
-			puts "Bill #{bill.name} not eligable"
+			#puts "Bill #{bill.name.strip} not eligable"
 		end
 	end
 end
