@@ -76,11 +76,11 @@ module Scrapable
   def run
     opts = OptionParser.new do |o|
       o.on("-y", "--years [YEARS]", "Years to parse") {|opt| options[:years] = opt}
-      o.on(nil,  "--all", "Parse from 1969...2009") {|opt| options[:years] << 1969...2009}              
+      o.on(nil,  "--all", "Parse from 1969...2009") {|opt| options[:years] = (1969...2009).collect { |year| year.to_s }}              
       o.on(nil,  "--upper", "Parse upper chamber") {|opt| options[:chambers] << 'upper'}  
       o.on(nil,  "--lower", "Parse lower chamber") {|opt| options[:chambers] << 'lower'}              
     end.parse!
-    
+
     setup_data_directories
     years = options[:years]
     options[:years] = years.kind_of?(String) ? years.strip.split(/\s+|,/i).compact.reject {|y| y.empty?} : years
