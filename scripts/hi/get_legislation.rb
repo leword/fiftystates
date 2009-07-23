@@ -16,18 +16,21 @@ module Hawaii
     
 		# Determine if bill is eligable for the year requested
 		def eligable?
-		  puts "Determine Eligability"
 		  if @year.to_i == 2008
-			  @eligable ||= (not (detail_page.search('table')[1].at('tr:nth(1)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/#{@year}/).nil?)
+			  @eligable ||= (not (detail_page.search('table')[1].at('tr:nth(1)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/#{@year}/).nil?) 
 			elsif @year.to_i == 2007
   			@eligable ||= (not (detail_page.at('table/tr:nth(2)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/#{@year}/).nil?)
 		  else
-		    @eligable ||= (not (detail_page.search('table')[1].at('tr:nth(2)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/#{@year}/).nil?)
+		    @eligable ||= (not (detail_page.search('table')[1].at('tr:nth(2)/td').inner_text =~ /[0-9]{1,2}\/[0-9]{1,2}\/(#{@year}|#{@year[2..4]})/).nil?)
 		  end
+		  puts "Not Eligable Bill Created on #{detail_page.search('table')[1].at('tr:nth(1)/td').inner_text}"  if (!@eligable)
+		  return @eligable 
+		rescue
+		  puts "Error encountered when determining eligibility"
+		  false
 		end
 		
 		def name
-		  puts "Get name"
 		  if (@year.to_i >= 2007)
   			detail_page.at('div.clearrow:nth(1) > div.rightside').inner_text
 		  else
@@ -36,14 +39,12 @@ module Hawaii
 		end
 		
 		def session
-		  puts "Get session"
       detail_page.at('h2/center').inner_text.gsub(/^[^<]+<BR>/, "")
     rescue
       "#{@year} Regular Session"
     end
     
     def bill_id
-      puts "Get Bill ID"
       if (@year.to_i >= 2007)
         detail_page.at('h3/a').inner_text
       else
@@ -52,7 +53,6 @@ module Hawaii
     end
     
     def primary_sponsor
-      puts "Get Sponsor"
       if (@year.to_i >= 2007)
         detail_page.at('div.clearrow:nth(6) > div.rightside').inner_text
       else
@@ -61,7 +61,6 @@ module Hawaii
     end
 
 		def actions
-		  puts "Get Actions"
 		  path = (@year.to_i >= 2007) ? 'table/tr' : 'table:nth(1)/tr'
 			detail_page.search(path).collect do |row|
 				if row.at('td').nil?
@@ -193,7 +192,6 @@ module Hawaii
 			else
 				chamber_ids = (chamber == "upper") ? {"S" => "upper"} : {"H" => "lower"} 
 			end
-			puts "Searching archives"
 			#search the archives
 			doc = Hpricot(open("http://www.capitol.hawaii.gov/session#{year}/status/"))
 			doc.search("a").each do |link|
@@ -231,7 +229,6 @@ module Hawaii
 				end
 			end
 		else
-			puts "Searching current"
 			Hpricot.buffer_size = 3456789 # Give Hpricot more buffer space for the really large ASP pages
 			#New version of the site
 			if (chamber != "upper")			
@@ -275,9 +272,7 @@ module Hawaii
 	    bill.versions.each do |version|
 	    	add_bill_version(common_hash.merge(version))
 	    end
-		else
-			#puts "Bill #{bill.name.strip} not eligable"
-		end
+	  end
 	end
 end
 
