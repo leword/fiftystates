@@ -1,14 +1,32 @@
 #!/usr/bin/env python
-import urllib2, urllib
+import urllib
+import urllib2
 import re
 from BeautifulSoup import BeautifulSoup
 import datetime as dt
 import time
-
-# ugly hack
 import sys
-sys.path.append('./scripts')
-from pyutils.legislation import *
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from pyutils.legislation import (LegislationScraper, Bill, Vote, Legislator,
+                                 NoDataForYear, ScrapeError)
+
+def parse_exec_date(date_str):
+    """
+    Parse dates for executive actions.
+    """
+
+    match = re.search('(\w+ \d{1,2}, \d{4,4})', date_str)
+    if match:
+        return dt.datetime.strptime(match.group(1), "%B %d, %Y")
+
+    match = re.search('(\d{1,2}/\d{1,2}/\d{4,4})', date_str)
+    if match:
+        return dt.datetime.strptime(match.group(1), "%m/%d/%Y")
+
+    raise ScrapeError("Invalid executive action date: %s" % date_str)
+
 
 class VTLegislationScraper(LegislationScraper):
 
@@ -48,17 +66,20 @@ class VTLegislationScraper(LegislationScraper):
         else:
             bill_abbr = "S."
 
-        bill_list_url = "http://www.leg.state.vt.us/docs/bills.cfm?Session=%s&Body=%s" % (session.split('-')[1], bill_abbr[0])
-        self.log("Getting bill list for %s %s" % (chamber, session))
+        bill_list_path = "docs/bills.cfm?Session=%s&Body=%s" % (
+            session.split('-')[1], bill_abbr[0])
+        bill_list_url = "http://www.leg.state.vt.us/" + bill_list_path
         bill_list = BeautifulSoup(self.urlopen(bill_list_url))
 
         bill_link_re = re.compile('.*?Bill=%s\.\d+.*' % bill_abbr[0])
         for bill_link in bill_list.findAll('a', href=bill_link_re):
             bill_id = bill_link.string
             bill_title = bill_link.parent.findNext('b').string
-            bill = Bill(session, chamber, bill_id, bill_title)
-
             bill_info_url = "http://www.leg.state.vt.us" + bill_link['href']
+
+            bill = Bill(session, chamber, bill_id, bill_title)
+            bill.add_source(bill_info_url)
+
             info_page = BeautifulSoup(self.urlopen(bill_info_url))
 
             text_links = info_page.findAll('blockquote')[1].findAll('a')
@@ -69,29 +90,36 @@ class VTLegislationScraper(LegislationScraper):
 
             act_table = info_page.findAll('blockquote')[2].table
             for row in act_table.findAll('tr')[1:]:
-                if row['bgcolor'] == 'Salmon':
-                    act_chamber = 'lower'
-                else:
-                    act_chamber = 'upper'
-
                 action = ""
                 for s in row.findAll('td')[1].findAll(text=True):
                     action += s + " "
                 action = action.strip()
 
-                if row.td.a:
-                    act_date = row.td.a.string
+                match = re.search('Governor on (.*)$', action)
+                if match:
+                    act_date = parse_exec_date(match.group(1).strip())
+                    actor = 'Governor'
                 else:
-                    act_date = row.td.string
-                act_date = re.search(
-                    '\d{1,2}/\d{1,2}/\d{4,4}', act_date).group(0)
-                act_date = dt.datetime.strptime(act_date, '%m/%d/%Y')
-                bill.add_action(act_chamber, action, act_date)
+                    if row['bgcolor'] == 'Salmon':
+                        actor = 'lower'
+                    else:
+                        actor = 'upper'
+
+                    if row.td.a:
+                        act_date = row.td.a.string
+                    else:
+                        act_date = row.td.string
+
+                    act_date = re.search(
+                        '\d{1,2}/\d{1,2}/\d{4,4}', act_date).group(0)
+                    act_date = dt.datetime.strptime(act_date, '%m/%d/%Y')
+
+                bill.add_action(actor, action, act_date)
 
                 vote_link = row.find('a', text='Details')
                 if vote_link:
-                    self.parse_vote_new(bill, act_chamber,
-                                        vote_link.parent['href'])
+                    vote_url = vote_link.parent['href']
+                    self.parse_vote_new(bill, actor, vote_url)
 
             sponsors = info_page.find(
                 text='Sponsor(s):').parent.parent.findAll('b')
@@ -116,6 +144,7 @@ class VTLegislationScraper(LegislationScraper):
 
         vote = Vote(chamber, date, motion, passed,
                     yes_count, no_count, abs_count)
+        vote.add_source(url)
 
         for tr in table.findAll('tr')[3:]:
             if len(tr.findAll('td')) != 2:
@@ -146,18 +175,20 @@ class VTLegislationScraper(LegislationScraper):
         data = urllib.urlencode({'Date': start_date,
                                  'Body': bill_abbr[0],
                                  'Session': session.split('-')[1]})
-        bill_list_url = "http://www.leg.state.vt.us/database/rintro/results.cfm"
-        self.log("Getting bill list for %s %s" % (chamber, session))
+        bill_list_url = "http://www.leg.state.vt.us/database/"\
+            "rintro/results.cfm"
         bill_list = BeautifulSoup(urllib2.urlopen(bill_list_url, data))
 
         bill_link_re = re.compile('.*?Bill=%s.\d+.*' % bill_abbr[0])
         for bill_link in bill_list.findAll('a', href=bill_link_re):
             bill_id = bill_link.string
             bill_title = bill_link.parent.parent.findAll('td')[1].string
-            bill = Bill(session, chamber, bill_id, bill_title)
+            bill_info_url = "http://www.leg.state.vt.us" + bill_link['href']
 
-            info_page = BeautifulSoup(self.urlopen(
-                    "http://www.leg.state.vt.us" + bill_link['href']))
+            bill = Bill(session, chamber, bill_id, bill_title)
+            bill.add_source(bill_info_url)
+
+            info_page = BeautifulSoup(self.urlopen(bill_info_url))
 
             text_links = info_page.findAll('blockquote')[-1].findAll('a')
             for text_link in text_links:
@@ -226,7 +257,8 @@ class VTLegislationScraper(LegislationScraper):
         # just HTML tables
         # What Vermont claims is a CSV file is actually one row of comma
         # separated values followed by a ColdFusion error.
-        leg_url = "http://www.leg.state.vt.us/legdir/memberdata.cfm/memberdata.doc?FileType=W"
+        leg_url = "http://www.leg.state.vt.us/legdir/"\
+            "memberdata.cfm/memberdata.doc?FileType=W"
         leg_table = BeautifulSoup(self.urlopen(leg_url))
 
         for tr in leg_table.findAll('tr')[1:]:
@@ -272,7 +304,8 @@ class VTLegislationScraper(LegislationScraper):
             leg = Legislator(session, chamber, district, full,
                              first, last, middle, party,
                              official_email=official_email)
+            leg.add_source(leg_url)
             self.add_legislator(leg)
 
 if __name__ == '__main__':
-    VTLegislationScraper().run()
+    VTLegislationScraper.run()
