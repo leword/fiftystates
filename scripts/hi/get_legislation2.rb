@@ -119,7 +119,7 @@ class HawaiiScraper < LegislationScraper
     list_url = "http://www.capitol.hawaii.gov/session#{year}/lists/#{list_pagename}.aspx"
     list_doc = Hpricot(copen(list_url))
     
-		list_doc.search('table/tr')[0..5].each do |row|
+		list_doc.search('table/tr').each do |row|
 			if bill_link = row.at("td:nth(3)/font/a")
 			  bill_url = "http://www.capitol.hawaii.gov/session#{year}/lists/#{bill_link.attributes['href']}"
 			  
