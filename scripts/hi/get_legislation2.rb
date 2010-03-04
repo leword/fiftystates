@@ -2,6 +2,7 @@
 require File.join(File.dirname(__FILE__), '..', 'rbutils', 'new_legislation')
 require 'hpricot'
 require 'open-uri'
+require 'ruby-debug'
 
 def copen url
   # cached open
@@ -25,7 +26,8 @@ class BillParser
 	def initialize detail_url, year, chamber
     @detail_url, @year, @chamber = detail_url, year, chamber
     @detail_page = Hpricot(copen(@detail_url))
-    raise "screwy year data" unless eligable?
+    #debugger
+    #raise "screwy year data" unless eligable?
   end
     
 	# Determine if bill is eligable for the year requested
@@ -47,6 +49,21 @@ class BillParser
   
   def primary_sponsor
     detail_page.search('table')[2].at('tr/td:nth(1)').inner_text.strip
+  end
+
+  # extra fields
+  def main_table n
+    detail_page.search('table')[1].at("tr:nth(#{n})/td:nth(1)").inner_text.strip
+  end
+
+  def extra
+    {
+      :report_title => main_table(1),
+      :description => main_table(2),
+      :companion => main_table(3),
+      :package => main_table(4),
+      :current_referral => main_table(5).split(",").map(&:strip)
+    }
   end
 
 	def actions
@@ -107,7 +124,7 @@ class HawaiiScraper < LegislationScraper
 			  bill_url = "http://www.capitol.hawaii.gov/session#{year}/lists/#{bill_link.attributes['href']}"
 			  
 			  bp = BillParser.new bill_url, year, chamber
-			  bill = Bill.new session, chamber, bp.bill_id, bp.title
+			  bill = Bill.new session, chamber, bp.bill_id, bp.title, bp.extra
 			  
 			  bp.actions.each do |action|
 			    # FIXME: 
