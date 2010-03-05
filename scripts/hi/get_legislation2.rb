@@ -62,7 +62,7 @@ class BillParser
       :description => main_table(2),
       :companion => main_table(3),
       :package => main_table(4),
-      :current_referral => main_table(5).split(",").map(&:strip)
+      :current_referral => main_table(5),
     }
   end
 
@@ -132,7 +132,7 @@ class HawaiiScraper < LegislationScraper
 			  end
 			  
 			  bp.primary_sponsor.split(",").each do |sponsor|
-			    bill.add_sponsor( :primary, sponsor )
+			    bill.add_sponsor( :primary, sponsor.gsub(/\(br\)/i,"").strip )
 			  end
 			  # bill.add_action
 			  # bill.add_sponsor
