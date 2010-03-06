@@ -6,18 +6,32 @@ require 'ruby-debug'
 
 def copen url
   # cached open
-  filekey = File.join( File.dirname(__FILE__), '..', '..', 'cache', url.gsub("http://",'').gsub("/","-") )
-  if File.exists?( filekey )
-    puts "cache hit: #{url} : #{filekey}"
-  else
-    puts "cache miss: #{url} : #{filekey}"
-    open( url ) do |uri|
-      File.open( filekey, "w" ) do |file|
-        file.write uri.read
+  if url =~ /^http:/
+    filekey = File.join( File.dirname(__FILE__), '..', '..', 'cache', url.gsub("http://",'').gsub("/","-") )
+    if File.exists?( filekey )
+      puts "cache hit: #{url} : #{filekey}"
+    else
+      puts "cache miss: #{url} : #{filekey}"
+      open( url ) do |uri|
+        File.open( filekey, "w" ) do |file|
+          file.write uri.read
+        end
       end
     end
+  else
+    filekey = url
   end
   File.open( filekey )
+end
+
+class ActionParser
+  def self.committee_referral( action  )
+    if m = action.match(/eferred to[^A-Z]*([A-Z\,\s\/]+)/) 
+      #left off "r" because sometimes upper case sometimes lower
+      m[1].split(/[\s,]+/).compact.first.split('/')
+      # first clean list of committees, then clean first one or pair
+    end
+  end
 end
 
 class BillParser
@@ -63,6 +77,7 @@ class BillParser
       :companion => main_table(3),
       :package => main_table(4),
       :current_referral => main_table(5),
+      :committee => actions.map{|a| ActionParser.committee_referral( a[:action_text] ) }.compact.last
     }
   end
 
@@ -71,13 +86,8 @@ class BillParser
 			if row.at('td').nil?
 				nil
 			else
-				@action_chamber = ""
-				if row.at('td:nth(1)/font').inner_text == "H"
-					@action_chamber = "H"
-				end
-				if row.at('td:nth(1)/font').inner_text == "S"
-					@action_chamber = "S"
-				end
+				c = row.at('td:nth(1)/font').inner_text
+				@action_chamber = ["H","S"].include?(c) ? c : ""
 				{
           :action_chamber => @action_chamber, 
           :action_text => row.at('td:nth(2)/font').inner_text, 
