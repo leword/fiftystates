@@ -47,7 +47,7 @@ class ActionParser
       vote_strings = $~[3].split(';')
       vote_strings.each do |vs|
         if vs.gsub(/and /,'').match(  / ((\d+) )?([^:]+): \w+\(s\) (.*)/ )
-          count, kind, names = ($~[2] || 0).to_i, $~[3], $~[4].split(", ").map(&:strip)
+          count, kind, names = ($~[2] || 0).to_i, $~[3], $~[4].split(", ").map{|x| x.strip}
           case kind
             when /aye/i
               yes_count += count;
