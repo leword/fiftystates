@@ -25,13 +25,50 @@ def copen url
 end
 
 class ActionParser
-  def self.committee_referral( action  )
-    if m = action.match(/eferred to[^A-Z]*([A-Z\,\s\/]+)/) 
+  def self.committee_referral( action_text  )
+    if m = action_text.match(/eferred to[^A-Z]*([A-Z\,\s\/]+)/) 
       #left off "r" because sometimes upper case sometimes lower
       m[1].split(/[\s,]+/).compact.first.split('/')
       # first clean list of committees, then clean first one or pair
     end
   end
+  
+  def self.vote( action )
+    if action[:text] =~ /^The committee.*on (.+) recommend.*that the measure be (.+). The votes.*were as follows:(.*).$/
+      motion, passed, yes_count, no_count, other_count = "","",0,0,0
+      extra = {
+        :body => $~[1],
+        :outcome => $~[2],
+        :yes_votes => [],
+        :no_votes => [],
+        :other_votes => []
+      }
+
+      vote_strings = $~[3].split(';')
+      vote_strings.each do |vs|
+        if vs.gsub(/and /,'').match(  / ((\d+) )?([^:]+): \w+\(s\) (.*)/ )
+          count, kind, names = ($~[2] || 0).to_i, $~[3], $~[4].split(", ").map(&:strip)
+          case kind
+            when /aye/i
+              yes_count += count;
+              extra[:yes_votes] += names
+            when /no/i
+              no_count += count;
+              extra[:no_votes] += names
+            else
+              other_count += count
+              extra[:other_votes] += names
+          end
+        end
+      end
+
+      Vote.new( action[:chamber], action[:date], motion, passed, yes_count, no_count, other_count, extra )
+    end
+  end
+  
+  #def initialize(chamber, date, motion, passed, yes_count, no_count,
+  #               other_count, extra={})
+  
 end
 
 class BillParser
@@ -77,7 +114,7 @@ class BillParser
       :companion => main_table(3),
       :package => main_table(4),
       :current_referral => main_table(5),
-      :committee => actions.map{|a| ActionParser.committee_referral( a[:action_text] ) }.compact.last
+      :committee => actions.map{|a| ActionParser.committee_referral( a[:text] ) }.compact.last
     }
   end
 
@@ -89,9 +126,9 @@ class BillParser
 				c = row.at('td:nth(1)/font').inner_text
 				@action_chamber = ["H","S"].include?(c) ? c : ""
 				{
-          :action_chamber => @action_chamber, 
-          :action_text => row.at('td:nth(2)/font').inner_text, 
-          :action_date => row.at('td/font').inner_text
+          :chamber => @action_chamber, 
+          :text => row.at('td:nth(2)/font').inner_text, 
+          :date => row.at('td/font').inner_text
         }
 			end
 		end.compact
@@ -110,8 +147,6 @@ class BillParser
     return []
   end
 end
-
-
 
 
 #New version of the site- this works at best from 2009 on.
@@ -138,7 +173,10 @@ class HawaiiScraper < LegislationScraper
 			  
 			  bp.actions.each do |action|
 			    # FIXME: 
-			    bill.add_action action[:action_chamber], action[:action_text], action[:action_date]
+			    bill.add_action action[:chamber], action[:text], action[:date]
+			    if vote = ActionParser.vote( action )
+			      bill.add_vote vote
+		      end
 			  end
 			  
 			  bp.primary_sponsor.split(",").each do |sponsor|
